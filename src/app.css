@@ -1,0 +1,57 @@
+:root {
+  /* --font-sans: "Satoshi", system-ui, -apple-system, sans-serif; */
+  --font-sans: "Switzer Variable", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-bg: #f6f6f6;
+  --color-surface: #ffffff;
+  --color-border: #e8e8e8;
+  --color-text: #1a1a1a;
+  --color-text-muted: #6b6b6b;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --space-unit: 8px;
+  --transition: 150ms ease;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.012em;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  outline: none;
+}
+
+::selection {
+  background: rgba(0, 0, 0, 0.1);
+}
