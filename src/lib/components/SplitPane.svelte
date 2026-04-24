@@ -57,6 +57,20 @@
 		isDragging = false;
 	}
 
+	function handleDividerKeydown(e: KeyboardEvent) {
+		if (editorState.viewMode !== 'split') return;
+		const step = e.shiftKey ? 0.1 : 0.02;
+		if (e.key === 'ArrowLeft') {
+			e.preventDefault();
+			splitRatio = Math.max(0.2, splitRatio - step);
+			localStorage.setItem(STORAGE_KEY, splitRatio.toString());
+		} else if (e.key === 'ArrowRight') {
+			e.preventDefault();
+			splitRatio = Math.min(0.8, splitRatio + step);
+			localStorage.setItem(STORAGE_KEY, splitRatio.toString());
+		}
+	}
+
 	const editorWidth = $derived(
 		editorState.viewMode === 'preview' ? '0' :
 		editorState.viewMode === 'editor' ? '100%' :
@@ -80,12 +94,20 @@
 	>
 		<Editor onScroll={handleEditorScroll} scrollRatio={editorScrollRatio} />
 	</div>
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="divider"
 		class:hidden={editorState.viewMode !== 'split'}
 		onmousedown={handleMouseDown}
+		onkeydown={handleDividerKeydown}
 		role="separator"
+		aria-label="Resize panes"
 		aria-orientation="vertical"
+		aria-valuenow={Math.round(splitRatio * 100)}
+		aria-valuemin={20}
+		aria-valuemax={80}
+		tabindex={editorState.viewMode === 'split' ? 0 : -1}
 	></div>
 	<div
 		class="pane preview-pane"
@@ -122,6 +144,16 @@
 		background: var(--color-border);
 		cursor: col-resize;
 		position: relative;
+		padding: 0;
+		border: none;
+	}
+
+	.divider:focus-visible {
+		outline: none;
+	}
+
+	.divider:focus-visible::before {
+		background: var(--color-accent);
 	}
 
 	.divider::before {

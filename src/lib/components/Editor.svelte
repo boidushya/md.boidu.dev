@@ -2,11 +2,27 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { editorState } from '$lib/stores/editor.svelte';
 	import { EditorView, keymap, placeholder } from '@codemirror/view';
-	import { EditorState } from '@codemirror/state';
+	import { EditorState, type Extension } from '@codemirror/state';
 	import { markdown } from '@codemirror/lang-markdown';
 	import { languages } from '@codemirror/language-data';
-	import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-	import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+	import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands';
+	import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
+	import { tags as t } from '@lezer/highlight';
+
+	const mdHighlight = HighlightStyle.define([
+		{ tag: t.heading, color: 'var(--cm-heading)', fontWeight: '600' },
+		{ tag: t.strong, fontWeight: '700' },
+		{ tag: t.emphasis, fontStyle: 'italic' },
+		{ tag: t.strikethrough, textDecoration: 'line-through' },
+		{ tag: t.link, color: 'var(--cm-link)' },
+		{ tag: t.url, color: 'var(--cm-link)', textDecoration: 'underline' },
+		{ tag: t.monospace, color: 'var(--cm-code)' },
+		{ tag: t.quote, color: 'var(--color-text-muted)', fontStyle: 'italic' },
+		{ tag: t.meta, color: 'var(--cm-meta)' },
+		{ tag: t.processingInstruction, color: 'var(--cm-separator)' },
+		{ tag: t.contentSeparator, color: 'var(--cm-separator)' },
+		{ tag: t.list, color: 'var(--cm-list)' }
+	]);
 
 	interface Props {
 		onScroll?: (scrollRatio: number) => void;
@@ -46,30 +62,29 @@
 		}
 	});
 
-	onMount(() => {
-		const startState = EditorState.create({
-			doc: editorState.content,
-			extensions: [
-				theme,
-				placeholder('Start writing markdown...'),
-				markdown({ codeLanguages: languages }),
-				syntaxHighlighting(defaultHighlightStyle),
-				keymap.of([...defaultKeymap, indentWithTab]),
-				EditorView.updateListener.of((update) => {
-					if (update.docChanged) {
-						editorState.updateContent(update.state.doc.toString());
-					}
-				}),
-				EditorView.lineWrapping
-			]
-		});
+	function buildExtensions(): Extension[] {
+		return [
+			history(),
+			theme,
+			placeholder('Start writing markdown...'),
+			markdown({ codeLanguages: languages }),
+			syntaxHighlighting(mdHighlight),
+			keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+			EditorView.updateListener.of((update) => {
+				if (update.docChanged) {
+					editorState.updateContent(update.state.doc.toString());
+				}
+			}),
+			EditorView.lineWrapping
+		];
+	}
 
+	onMount(() => {
 		view = new EditorView({
-			state: startState,
+			state: EditorState.create({ doc: editorState.content, extensions: buildExtensions() }),
 			parent: editorContainer
 		});
 
-		// Listen for scroll events
 		view.scrollDOM.addEventListener('scroll', handleScroll);
 	});
 
@@ -87,17 +102,13 @@
 		}
 	}
 
-	// Sync external content changes to CodeMirror
+	let lastProjectId: string | null = null;
 	$effect(() => {
-		if (view && editorState.content !== view.state.doc.toString()) {
-			view.dispatch({
-				changes: {
-					from: 0,
-					to: view.state.doc.length,
-					insert: editorState.content
-				}
-			});
-		}
+		const id = editorState.currentProject?.id ?? null;
+		if (!view) return;
+		if (id === lastProjectId) return;
+		lastProjectId = id;
+		view.setState(EditorState.create({ doc: editorState.content, extensions: buildExtensions() }));
 	});
 
 	// Sync scroll position from preview
@@ -119,7 +130,7 @@
 <style>
 	.editor {
 		height: 100%;
-		background: var(--color-surface);
+		background: var(--color-editor);
 	}
 
 	.editor :global(.cm-editor) {

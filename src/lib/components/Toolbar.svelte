@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { editorState, type ViewMode } from '$lib/stores/editor.svelte';
-	import { SidebarMinimalistic, AddCircle, QuestionCircle } from '@solar-icons/svelte/Linear';
+	import { theme } from '$lib/stores/theme.svelte';
+	import {
+		SidebarMinimalistic,
+		AddCircle,
+		QuestionCircle,
+		Share,
+		Moon,
+		Sun
+	} from '@solar-icons/svelte/Linear';
 
 	interface Props {
 		onNewProject: () => void;
@@ -11,7 +19,7 @@
 
 	let isEditingName = $state(false);
 	let editedName = $state('');
-	let nameInput: HTMLInputElement;
+	let nameInput = $state<HTMLInputElement>();
 
 	const views: { mode: ViewMode; label: string }[] = [
 		{ mode: 'editor', label: 'Editor' },
@@ -65,6 +73,9 @@
 					<span
 						class="project-name"
 						ondblclick={startEditing}
+						onkeydown={(e) => (e.key === 'Enter' || e.key === 'F2') && startEditing()}
+						role="button"
+						tabindex="0"
 						title="Double-click to rename"
 					>{editorState.currentProject.name}</span>
 				{/if}
@@ -93,8 +104,29 @@
 			</span>
 		{/if}
 
+		<button
+			class="action-btn"
+			onclick={() => editorState.share()}
+			disabled={!editorState.content.trim() || editorState.sharing}
+			title="Share snapshot (Cmd+Shift+S)"
+		>
+			<Share size={18} />
+		</button>
+
 		<button class="action-btn" onclick={onNewProject} title="New Project (Cmd+N)">
 			<AddCircle size={18} />
+		</button>
+
+		<button
+			class="action-btn"
+			onclick={() => theme.toggle()}
+			title={theme.current === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+		>
+			{#if theme.current === 'dark'}
+				<Sun size={18} />
+			{:else}
+				<Moon size={18} />
+			{/if}
 		</button>
 
 		<button class="action-btn" onclick={onShowHelp} title="Help (Cmd+/)">
@@ -105,9 +137,9 @@
 
 <style>
 	.toolbar {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
 		align-items: center;
-		justify-content: space-between;
 		height: 48px;
 		padding: 0 calc(var(--space-unit) * 2);
 		background: var(--color-surface);
@@ -119,11 +151,15 @@
 		display: flex;
 		align-items: center;
 		gap: calc(var(--space-unit) * 1.5);
-		min-width: 180px;
+		min-width: 0;
+	}
+
+	.left {
+		justify-self: start;
 	}
 
 	.right {
-		justify-content: flex-end;
+		justify-self: end;
 	}
 
 	.center {
@@ -232,5 +268,15 @@
 	.action-btn:hover {
 		background: var(--color-bg);
 		color: var(--color-text);
+	}
+
+	.action-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.action-btn:disabled:hover {
+		background: transparent;
+		color: var(--color-text-muted);
 	}
 </style>

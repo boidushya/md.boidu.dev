@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js/lib/core';
@@ -55,5 +56,10 @@ marked.setOptions({
 });
 
 export function parseMarkdown(content: string): string {
-	return marked.parse(content) as string;
+	const rawHtml = marked.parse(content) as string;
+	return DOMPurify.sanitize(rawHtml, {
+		ADD_ATTR: ['target'],
+		FORBID_TAGS: ['style'],
+		FORBID_ATTR: ['onerror', 'onload', 'onclick']
+	});
 }

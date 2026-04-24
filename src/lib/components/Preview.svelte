@@ -5,14 +5,16 @@
 	interface Props {
 		onScroll?: (scrollRatio: number) => void;
 		scrollRatio?: number;
+		content?: string;
 	}
 
-	let { onScroll, scrollRatio }: Props = $props();
+	let { onScroll, scrollRatio, content }: Props = $props();
 
 	let previewEl: HTMLDivElement;
 	let isScrolling = false;
 
-	const html = $derived(parseMarkdown(editorState.content));
+	const sourceContent = $derived(content ?? editorState.content);
+	const html = $derived(parseMarkdown(sourceContent));
 
 	function handleScroll() {
 		if (isScrolling || !previewEl || !onScroll) return;
@@ -46,7 +48,7 @@
 	.preview {
 		height: 100%;
 		overflow-y: auto;
-		background: var(--color-surface);
+		background: var(--color-editor);
 	}
 
 	.prose {

@@ -8,6 +8,13 @@
 	let showNewProjectDialog = $state(false);
 	let showHelpDialog = $state(false);
 	let newProjectName = $state('');
+	let newProjectInput = $state<HTMLInputElement>();
+
+	$effect(() => {
+		if (showNewProjectDialog && newProjectInput) {
+			newProjectInput.focus();
+		}
+	});
 
 	const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac');
 	const modKey = isMac ? '⌘' : 'Ctrl';
@@ -41,6 +48,9 @@
 		} else if (isMod && e.key === '3') {
 			e.preventDefault();
 			editorState.setViewMode('preview');
+		} else if (isMod && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+			e.preventDefault();
+			editorState.share();
 		} else if (isMod && e.key === 's') {
 			e.preventDefault();
 			editorState.save();
@@ -81,15 +91,21 @@
 </div>
 
 {#if showNewProjectDialog}
-	<div class="dialog-overlay" onclick={() => (showNewProjectDialog = false)} role="presentation">
-		<div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+	<div class="dialog-root">
+		<button
+			type="button"
+			class="dialog-backdrop"
+			onclick={() => (showNewProjectDialog = false)}
+			aria-label="Close dialog"
+		></button>
+		<div class="dialog" role="dialog" aria-modal="true" tabindex="-1">
 			<h3>New Project</h3>
 			<input
 				type="text"
+				bind:this={newProjectInput}
 				bind:value={newProjectName}
 				placeholder="Project name"
 				onkeydown={handleDialogKeydown}
-				autofocus
 			/>
 			<div class="dialog-actions">
 				<button class="btn-secondary" onclick={() => (showNewProjectDialog = false)}>Cancel</button>
@@ -100,8 +116,14 @@
 {/if}
 
 {#if showHelpDialog}
-	<div class="dialog-overlay" onclick={() => (showHelpDialog = false)} role="presentation">
-		<div class="dialog help-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+	<div class="dialog-root">
+		<button
+			type="button"
+			class="dialog-backdrop"
+			onclick={() => (showHelpDialog = false)}
+			aria-label="Close dialog"
+		></button>
+		<div class="dialog help-dialog" role="dialog" aria-modal="true" tabindex="-1">
 			<h3>Keyboard Shortcuts</h3>
 			<div class="shortcuts">
 				<div class="shortcut">
@@ -123,6 +145,10 @@
 				<div class="shortcut">
 					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>N</kbd></span>
 					<span class="shortcut-desc">New project</span>
+				</div>
+				<div class="shortcut">
+					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>⇧</kbd><kbd>S</kbd></span>
+					<span class="shortcut-desc">Share snapshot</span>
 				</div>
 				<div class="shortcut">
 					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>/</kbd></span>
@@ -157,17 +183,26 @@
 	}
 
 	/* Dialog */
-	.dialog-overlay {
+	.dialog-root {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.4);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
 	}
 
+	.dialog-backdrop {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.4);
+		border: none;
+		padding: 0;
+		cursor: default;
+	}
+
 	.dialog {
+		position: relative;
 		background: var(--color-surface);
 		border-radius: var(--radius);
 		padding: calc(var(--space-unit) * 3);

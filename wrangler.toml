@@ -1,5 +1,12 @@
 name = "md-boidu-dev"
+main = "src/worker/index.ts"
 compatibility_date = "2026-01-22"
 
 [assets]
 directory = "build"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[r2_buckets]]
+binding = "SHARES"
+bucket_name = "md-shares"

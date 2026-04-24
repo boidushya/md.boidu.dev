@@ -4,8 +4,14 @@ import {
 	saveProject,
 	deleteProject,
 	createProject,
-	type Project
+	getAllShares,
+	saveShare,
+	deleteShare,
+	type Project,
+	type ShareRecord
 } from '$lib/db/projects';
+import { createShare, hashPayload, ShareTooLarge } from '$lib/share/service';
+import { toast } from 'svelte-sonner';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
 export type SaveStatus = 'saved' | 'saving' | 'unsaved';
@@ -26,13 +32,76 @@ class EditorState {
 	projects = $state<Project[]>([]);
 	saveStatus = $state<SaveStatus>('saved');
 	sidebarOpen = $state(false);
+	shares = $state<ShareRecord[]>([]);
+	sharesOpen = $state(true);
+	sharing = $state(false);
 
 	private saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	async init() {
-		this.projects = await getAllProjects();
+		const [projects, shares] = await Promise.all([getAllProjects(), getAllShares()]);
+		this.projects = projects;
+		this.shares = shares;
 		if (this.projects.length > 0) {
 			await this.loadProject(this.projects[0].id);
+		}
+	}
+
+	addShare(record: ShareRecord) {
+		this.shares = [record, ...this.shares];
+	}
+
+	async forgetShare(shareId: string): Promise<void> {
+		await deleteShare(shareId);
+		this.shares = this.shares.filter((s) => s.shareId !== shareId);
+	}
+
+	toggleShares() {
+		this.sharesOpen = !this.sharesOpen;
+	}
+
+	async share(): Promise<void> {
+		if (this.sharing) return;
+		if (!this.content.trim()) return;
+		this.sharing = true;
+		try {
+			await this.flushSave();
+			const title = this.currentProject?.name ?? 'Untitled';
+			const contentHash = await hashPayload(this.content, title);
+
+			const existing = this.shares.find((s) => s.contentHash === contentHash);
+			if (existing) {
+				await navigator.clipboard.writeText(existing.url);
+				toast('Reused existing share link', {
+					description: 'This exact content was already shared'
+				});
+				return;
+			}
+
+			const payload = { content: this.content, title, createdAt: Date.now() };
+			const { id, keyB64, url } = await createShare(payload);
+			const record: ShareRecord = {
+				shareId: id,
+				projectId: this.currentProject?.id ?? null,
+				title: payload.title,
+				createdAt: payload.createdAt,
+				keyB64,
+				url,
+				contentHash
+			};
+			await saveShare(record);
+			this.addShare(record);
+			await navigator.clipboard.writeText(url);
+			toast.success('Share link copied to clipboard');
+		} catch (err) {
+			if (err instanceof ShareTooLarge) {
+				toast.error('Document is too large to share (10 MB max)');
+			} else {
+				toast.error('Sharing failed — see console');
+				console.error(err);
+			}
+		} finally {
+			this.sharing = false;
 		}
 	}
 
@@ -81,6 +150,16 @@ class EditorState {
 		}, 500);
 	}
 
+	async flushSave(): Promise<void> {
+		if (this.saveTimeout) {
+			clearTimeout(this.saveTimeout);
+			this.saveTimeout = null;
+		}
+		if (this.saveStatus !== 'saved') {
+			await this.save();
+		}
+	}
+
 	async save() {
 		// Auto-create a project if none exists
 		if (!this.currentProject) {
@@ -122,6 +201,16 @@ class EditorState {
 
 	toggleSidebar() {
 		this.sidebarOpen = !this.sidebarOpen;
+	}
+
+	async forkFromShare(title: string, content: string): Promise<void> {
+		const project = await createProject(title);
+		const updated: Project = { ...project, content, updatedAt: Date.now() };
+		await saveProject(updated);
+		this.projects = [updated, ...this.projects];
+		this.currentProject = updated;
+		this.content = content;
+		this.saveStatus = 'saved';
 	}
 
 	async renameProject(newName: string) {
