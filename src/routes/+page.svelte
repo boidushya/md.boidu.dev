@@ -1,39 +1,44 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { editorState, type ViewMode } from '$lib/stores/editor.svelte';
+	import { editorState } from '$lib/stores/editor.svelte';
+	import { modKey } from '$lib/utils/platform';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import ProjectList from '$lib/components/ProjectList.svelte';
 	import SplitPane from '$lib/components/SplitPane.svelte';
+	import Dialog from '$lib/components/Dialog.svelte';
+	import { toast } from 'svelte-sonner';
+
+	const IMPORTABLE = /\.(md|markdown|txt)$/i;
+
+	const shortcuts: { keys: string[]; label: string }[] = [
+		{ keys: [modKey, '1'], label: 'Editor view' },
+		{ keys: [modKey, '2'], label: 'Split view' },
+		{ keys: [modKey, '3'], label: 'Preview view' },
+		{ keys: [modKey, 'B'], label: 'Toggle sidebar' },
+		{ keys: [modKey, 'N'], label: 'New project' },
+		{ keys: [modKey, 'S'], label: 'Save now' },
+		{ keys: [modKey, '⇧', 'S'], label: 'Share snapshot' },
+		{ keys: [modKey, '/'], label: 'Shortcuts' }
+	];
 
 	let showNewProjectDialog = $state(false);
 	let showHelpDialog = $state(false);
 	let newProjectName = $state('');
-	let newProjectInput = $state<HTMLInputElement>();
-
-	$effect(() => {
-		if (showNewProjectDialog && newProjectInput) {
-			newProjectInput.focus();
-		}
-	});
-
-	const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac');
-	const modKey = isMac ? '⌘' : 'Ctrl';
+	let dragDepth = $state(0);
 
 	onMount(() => {
 		editorState.init();
 	});
 
 	function handleNewProject() {
-		showNewProjectDialog = true;
 		newProjectName = '';
+		showNewProjectDialog = true;
 	}
 
-	async function createNewProject() {
-		if (newProjectName.trim()) {
-			await editorState.newProject(newProjectName.trim());
-			showNewProjectDialog = false;
-			newProjectName = '';
-		}
+	async function createNewProject(e: SubmitEvent) {
+		e.preventDefault();
+		await editorState.newProject(newProjectName.trim() || 'Untitled');
+		showNewProjectDialog = false;
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -63,21 +68,49 @@
 		} else if (isMod && e.key === '/') {
 			e.preventDefault();
 			showHelpDialog = !showHelpDialog;
-		} else if (e.key === 'Escape') {
-			if (showHelpDialog) showHelpDialog = false;
-			else if (showNewProjectDialog) showNewProjectDialog = false;
+		} else if (e.key === 'Escape' && editorState.isNarrow && editorState.sidebarOpen) {
+			editorState.sidebarOpen = false;
 		}
 	}
 
-	function handleDialogKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			createNewProject();
+	function hasFiles(e: DragEvent) {
+		return e.dataTransfer?.types.includes('Files') ?? false;
+	}
+
+	function handleDragEnter(e: DragEvent) {
+		if (hasFiles(e)) dragDepth++;
+	}
+
+	function handleDragLeave(e: DragEvent) {
+		if (hasFiles(e)) dragDepth = Math.max(0, dragDepth - 1);
+	}
+
+	function handleDragOver(e: DragEvent) {
+		if (hasFiles(e)) e.preventDefault();
+	}
+
+	async function handleDrop(e: DragEvent) {
+		if (!hasFiles(e)) return;
+		e.preventDefault();
+		dragDepth = 0;
+		const files = [...(e.dataTransfer?.files ?? [])];
+		const importable = files.filter((f) => IMPORTABLE.test(f.name));
+		if (importable.length === 0) {
+			toast.error('Only .md, .markdown and .txt files can be opened');
+			return;
 		}
+		for (const file of importable) await editorState.importFile(file);
+		toast.success(importable.length === 1 ? `Opened ${importable[0].name}` : `Opened ${importable.length} files`);
 	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window
+	onkeydown={handleKeydown}
+	ondragenter={handleDragEnter}
+	ondragleave={handleDragLeave}
+	ondragover={handleDragOver}
+	ondrop={handleDrop}
+/>
 
 <div class="app">
 	<ProjectList onNewProject={handleNewProject} />
@@ -90,83 +123,51 @@
 	</main>
 </div>
 
-{#if showNewProjectDialog}
-	<div class="dialog-root">
-		<button
-			type="button"
-			class="dialog-backdrop"
-			onclick={() => (showNewProjectDialog = false)}
-			aria-label="Close dialog"
-		></button>
-		<div class="dialog" role="dialog" aria-modal="true" tabindex="-1">
-			<h3>New Project</h3>
-			<input
-				type="text"
-				bind:this={newProjectInput}
-				bind:value={newProjectName}
-				placeholder="Project name"
-				onkeydown={handleDialogKeydown}
-			/>
-			<div class="dialog-actions">
-				<button class="btn-secondary" onclick={() => (showNewProjectDialog = false)}>Cancel</button>
-				<button class="btn-primary" onclick={createNewProject}>Create</button>
-			</div>
-		</div>
+{#if dragDepth > 0}
+	<div class="drop-overlay" aria-hidden="true">
+		<div class="drop-card">Drop a Markdown file to open it</div>
 	</div>
 {/if}
 
-{#if showHelpDialog}
-	<div class="dialog-root">
-		<button
-			type="button"
-			class="dialog-backdrop"
-			onclick={() => (showHelpDialog = false)}
-			aria-label="Close dialog"
-		></button>
-		<div class="dialog help-dialog" role="dialog" aria-modal="true" tabindex="-1">
-			<h3>Keyboard Shortcuts</h3>
-			<div class="shortcuts">
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>1</kbd></span>
-					<span class="shortcut-desc">Editor view</span>
-				</div>
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>2</kbd></span>
-					<span class="shortcut-desc">Split view</span>
-				</div>
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>3</kbd></span>
-					<span class="shortcut-desc">Preview view</span>
-				</div>
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>B</kbd></span>
-					<span class="shortcut-desc">Toggle sidebar</span>
-				</div>
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>N</kbd></span>
-					<span class="shortcut-desc">New project</span>
-				</div>
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>⇧</kbd><kbd>S</kbd></span>
-					<span class="shortcut-desc">Share snapshot</span>
-				</div>
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>{modKey}</kbd><kbd>/</kbd></span>
-					<span class="shortcut-desc">Show help</span>
-				</div>
-				<div class="shortcut">
-					<span class="shortcut-keys"><kbd>Esc</kbd></span>
-					<span class="shortcut-desc">Close dialog</span>
-				</div>
-			</div>
+<Dialog bind:open={showNewProjectDialog} title="New project">
+	<form onsubmit={createNewProject}>
+		<!-- svelte-ignore a11y_autofocus -->
+		<input
+			type="text"
+			bind:value={newProjectName}
+			placeholder="Untitled"
+			aria-label="Project name"
+			autofocus
+		/>
+		<div class="dialog-actions">
+			<button type="button" class="btn" onclick={() => (showNewProjectDialog = false)}>Cancel</button>
+			<button type="submit" class="btn primary">Create</button>
 		</div>
-	</div>
-{/if}
+	</form>
+</Dialog>
+
+<Dialog bind:open={showHelpDialog} title="Keyboard shortcuts" width={320}>
+	<dl class="shortcuts">
+		{#each shortcuts as { keys, label } (label)}
+			<div class="shortcut">
+				<dt>{label}</dt>
+				<dd>
+					{#each keys as key (key)}<kbd>{key}</kbd>{/each}
+				</dd>
+			</div>
+		{/each}
+		<div class="shortcut">
+			<dt>Close dialog</dt>
+			<dd><kbd>Esc</kbd></dd>
+		</div>
+	</dl>
+	<p class="hint">Drop a .md file anywhere to open it.</p>
+</Dialog>
 
 <style>
 	.app {
 		display: flex;
-		height: 100vh;
+		height: 100dvh;
 		overflow: hidden;
 	}
 
@@ -179,118 +180,61 @@
 
 	.content {
 		flex: 1;
+		min-height: 0;
 		overflow: hidden;
 	}
 
-	/* Dialog */
-	.dialog-root {
-		position: fixed;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 100;
-	}
-
-	.dialog-backdrop {
-		position: absolute;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.4);
-		border: none;
-		padding: 0;
-		cursor: default;
-	}
-
-	.dialog {
-		position: relative;
-		background: var(--color-surface);
-		border-radius: var(--radius);
-		padding: calc(var(--space-unit) * 3);
+	input {
 		width: 100%;
-		max-width: 360px;
-		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-	}
-
-	.dialog h3 {
-		margin-bottom: calc(var(--space-unit) * 2);
-		font-size: 16px;
-		font-weight: 600;
-	}
-
-	.dialog input {
-		width: 100%;
-		padding: calc(var(--space-unit) * 1.5);
+		height: 38px;
+		padding: 0 12px;
 		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
+		border-radius: 10px;
 		font-size: 14px;
-		transition: border-color var(--transition);
+		background: var(--color-bg);
+		transition:
+			border-color var(--dur-fast) ease,
+			box-shadow var(--dur-fast) ease;
 	}
 
-	.dialog input:focus {
-		border-color: var(--color-text);
+	input:focus {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 20%, transparent);
 	}
 
 	.dialog-actions {
 		display: flex;
 		justify-content: flex-end;
-		gap: calc(var(--space-unit) * 1);
-		margin-top: calc(var(--space-unit) * 3);
-	}
-
-	.btn-secondary,
-	.btn-primary {
-		padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 2);
-		border-radius: var(--radius-sm);
-		font-size: 14px;
-		font-weight: 500;
-		transition: all var(--transition);
-	}
-
-	.btn-secondary {
-		color: var(--color-text-muted);
-	}
-
-	.btn-secondary:hover {
-		background: var(--color-bg);
-		color: var(--color-text);
-	}
-
-	.btn-primary {
-		background: var(--color-text);
-		color: var(--color-surface);
-	}
-
-	.btn-primary:hover {
-		background: var(--color-text-muted);
-	}
-
-	/* Help dialog */
-	.help-dialog {
-		max-width: 320px;
+		gap: var(--space-unit);
+		margin-top: 20px;
 	}
 
 	.shortcuts {
 		display: flex;
 		flex-direction: column;
-		gap: calc(var(--space-unit) * 1.5);
+		gap: 10px;
 	}
 
 	.shortcut {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: calc(var(--space-unit) * 2);
+		gap: 16px;
 	}
 
-	.shortcut-keys {
+	dt {
+		font-size: 14px;
+		color: var(--color-text-muted);
+	}
+
+	dd {
 		display: flex;
 		gap: 4px;
 	}
 
-	.shortcut-keys kbd {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
+	kbd {
+		display: inline-grid;
+		place-items: center;
 		min-width: 24px;
 		height: 24px;
 		padding: 0 6px;
@@ -299,12 +243,44 @@
 		font-weight: 500;
 		color: var(--color-text);
 		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
+		box-shadow:
+			var(--shadow-border),
+			0 1px 0 var(--color-border);
+		border-radius: 6px;
 	}
 
-	.shortcut-desc {
-		font-size: 14px;
+	.hint {
+		margin-top: 16px;
+		padding-top: 14px;
+		box-shadow: 0 -1px 0 var(--color-border);
+		font-size: 13px;
 		color: var(--color-text-muted);
+	}
+
+	.drop-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 200;
+		display: grid;
+		place-items: center;
+		padding: 16px;
+		background: color-mix(in oklab, var(--color-bg) 70%, transparent);
+		pointer-events: none;
+		animation: fade-in var(--dur) ease both;
+	}
+
+	.drop-card {
+		padding: 28px 36px;
+		border: 1.5px dashed color-mix(in oklab, var(--color-accent) 60%, transparent);
+		border-radius: 16px;
+		background: var(--color-surface);
+		box-shadow: var(--shadow-pop);
+		font-weight: 500;
+	}
+
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+		}
 	}
 </style>

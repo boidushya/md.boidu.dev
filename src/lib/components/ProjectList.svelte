@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { editorState } from '$lib/stores/editor.svelte';
-	import {
-		AddCircle,
-		TrashBinMinimalistic,
-		AltArrowDown,
-		Copy,
-		Link
-	} from '@solar-icons/svelte/Linear';
+	import { copyFailed, copyText } from '$lib/share/clipboard';
+	import { scroll } from '$lib/actions/scroll';
+	import IconPlus from '@tabler/icons-svelte-runes/icons/plus';
+	import IconTrash from '@tabler/icons-svelte-runes/icons/trash';
+	import IconChevronDown from '@tabler/icons-svelte-runes/icons/chevron-down';
+	import IconCopy from '@tabler/icons-svelte-runes/icons/copy';
+	import IconExternalLink from '@tabler/icons-svelte-runes/icons/external-link';
+	import IconLayoutSidebar from '@tabler/icons-svelte-runes/icons/layout-sidebar';
 	import { toast } from 'svelte-sonner';
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
+	import { modKey } from '$lib/utils/platform';
 
 	interface Props {
 		onNewProject: () => void;
@@ -17,29 +19,37 @@
 
 	let { onNewProject }: Props = $props();
 
+	const overlay = $derived(editorState.isNarrow);
+
 	function formatDate(timestamp: number): string {
 		const date = new Date(timestamp);
-		const now = new Date();
-		const diff = now.getTime() - date.getTime();
-		const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+		const days = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
 
 		if (days === 0) return 'Today';
 		if (days === 1) return 'Yesterday';
 		if (days < 7) return `${days} days ago`;
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+		return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	}
+
+	async function openProject(id: string) {
+		await editorState.loadProject(id);
+		if (overlay) editorState.sidebarOpen = false;
 	}
 
 	async function handleDelete(e: Event, id: string) {
 		e.stopPropagation();
-		if (confirm('Delete this project?')) {
-			await editorState.removeProject(id);
-		}
+		const removed = await editorState.removeProject(id);
+		if (!removed) return;
+		toast(`Deleted “${removed.name}”`, {
+			action: { label: 'Undo', onClick: () => editorState.restoreProject(removed) }
+		});
 	}
 
-	async function copyShare(e: Event, url: string) {
+	function copyShare(e: Event, url: string) {
 		e.stopPropagation();
-		await navigator.clipboard.writeText(url);
-		toast.success('Share link copied');
+		copyText(url)
+			.then(() => toast.success('Share link copied'))
+			.catch(() => copyFailed(url, 'share link'));
 	}
 
 	function openShare(e: Event, url: string) {
@@ -53,164 +63,233 @@
 	}
 </script>
 
-<aside class="sidebar" class:open={editorState.sidebarOpen}>
-	<div class="sidebar-header">
-		<h2>Projects</h2>
-		<button class="new-btn" onclick={onNewProject} title="New Project">
-			<AddCircle size={16} />
-		</button>
-	</div>
+{#if overlay && editorState.sidebarOpen}
+	<button
+		class="scrim"
+		aria-label="Close sidebar"
+		onclick={() => (editorState.sidebarOpen = false)}
+	></button>
+{/if}
 
-	<div class="project-list">
-		{#if editorState.projects.length === 0}
-			<p class="empty">No projects yet</p>
-		{:else}
-			{#each editorState.projects as project (project.id)}
-				<div
-					class="project-item"
-					class:active={editorState.currentProject?.id === project.id}
-					onclick={() => editorState.loadProject(project.id)}
-					onkeydown={(e) => e.key === 'Enter' && editorState.loadProject(project.id)}
-					role="button"
-					tabindex="0"
-				>
-					<div class="project-info">
-						<span class="project-name">{project.name}</span>
-						<span class="project-date">{formatDate(project.updatedAt)}</span>
-					</div>
-					<button
-						class="delete-btn"
-						onclick={(e) => handleDelete(e, project.id)}
-						title="Delete project"
+<aside
+	class="sidebar"
+	class:open={editorState.sidebarOpen}
+	class:overlay
+	aria-hidden={!editorState.sidebarOpen}
+	inert={!editorState.sidebarOpen}
+>
+	<div class="panel">
+		<div class="sidebar-header">
+			<button
+				class="icon-btn"
+				onclick={() => editorState.toggleSidebar()}
+				title="Close sidebar ({modKey}B)"
+				aria-label="Close sidebar"
+			>
+				<IconLayoutSidebar size={18} />
+			</button>
+			<h2>Projects</h2>
+			<button class="icon-btn" onclick={onNewProject} title="New project" aria-label="New project">
+				<IconPlus size={18} />
+			</button>
+		</div>
+
+		<div class="project-list" use:scroll>
+			{#if editorState.projects.length === 0}
+				<p class="empty">No projects yet. Start typing and one is created for you.</p>
+			{:else}
+				{#each editorState.projects as project (project.id)}
+					<div
+						class="item project-item"
+						class:active={editorState.currentProject?.id === project.id}
+						onclick={() => openProject(project.id)}
+						onkeydown={(e) => e.key === 'Enter' && openProject(project.id)}
+						role="button"
+						tabindex="0"
+						aria-current={editorState.currentProject?.id === project.id ? 'true' : undefined}
 					>
-						<TrashBinMinimalistic size={14} />
-					</button>
-				</div>
-			{/each}
-		{/if}
-	</div>
-
-	<section class="shares">
-		<button
-			class="shares-header"
-			onclick={() => editorState.toggleShares()}
-			aria-expanded={editorState.sharesOpen}
-			title={editorState.sharesOpen ? 'Collapse shares' : 'Expand shares'}
-		>
-			<span class="chevron" class:open={editorState.sharesOpen}>
-				<AltArrowDown size={12} />
-			</span>
-			<h2>Shares</h2>
-			{#if editorState.shares.length > 0}
-				<span class="shares-count">{editorState.shares.length}</span>
-			{/if}
-		</button>
-
-		{#if editorState.sharesOpen}
-			<div class="shares-list" transition:slide={{ duration: 200, easing: cubicOut }}>
-				{#if editorState.shares.length === 0}
-					<p class="empty">No shares yet</p>
-				{:else}
-					{#each editorState.shares as share (share.shareId)}
-						<div
-							class="share-item"
-							onclick={(e) => copyShare(e, share.url)}
-							onkeydown={(e) => e.key === 'Enter' && copyShare(e, share.url)}
-							role="button"
-							tabindex="0"
-							title="Click to copy link"
-						>
-							<div class="share-info">
-								<span class="share-name">{share.title}</span>
-								<span class="share-date">{formatDate(share.createdAt)}</span>
-							</div>
-							<div class="share-actions">
-								<button
-									class="share-btn"
-									onclick={(e) => copyShare(e, share.url)}
-									title="Copy link"
-								>
-									<Copy size={13} />
-								</button>
-								<button
-									class="share-btn"
-									onclick={(e) => openShare(e, share.url)}
-									title="Open in new tab"
-								>
-									<Link size={13} />
-								</button>
-								<button
-									class="share-btn danger"
-									onclick={(e) => forgetShare(e, share.shareId)}
-									title="Forget locally"
-								>
-									<TrashBinMinimalistic size={13} />
-								</button>
-							</div>
+						<div class="item-info">
+							<span class="item-name">{project.name}</span>
+							<span class="item-date">{formatDate(project.updatedAt)}</span>
 						</div>
-					{/each}
+						<div class="item-actions">
+							<button
+								class="icon-btn sm danger"
+								onclick={(e) => handleDelete(e, project.id)}
+								title="Delete project"
+								aria-label="Delete {project.name}"
+							>
+								<IconTrash size={14} />
+							</button>
+						</div>
+					</div>
+				{/each}
+			{/if}
+		</div>
+
+		<section class="shares">
+			<button
+				class="shares-header"
+				onclick={() => editorState.toggleShares()}
+				aria-expanded={editorState.sharesOpen}
+			>
+				<span class="chevron" class:open={editorState.sharesOpen}>
+					<IconChevronDown size={12} />
+				</span>
+				<h2>Shares</h2>
+				{#if editorState.shares.length > 0}
+					<span class="shares-count">{editorState.shares.length}</span>
 				{/if}
-			</div>
-		{/if}
-	</section>
+			</button>
+
+			{#if editorState.sharesOpen}
+				<div class="shares-list" use:scroll transition:slide={{ duration: 200, easing: cubicOut }}>
+					{#if editorState.shares.length === 0}
+						<p class="empty">Shared snapshots show up here.</p>
+					{:else}
+						{#each editorState.shares as share (share.shareId)}
+							<div
+								class="item share-item"
+								onclick={(e) => copyShare(e, share.url)}
+								onkeydown={(e) => e.key === 'Enter' && copyShare(e, share.url)}
+								role="button"
+								tabindex="0"
+								title="Copy link"
+							>
+								<div class="item-info">
+									<span class="item-name">{share.title}</span>
+									<span class="item-date">{formatDate(share.createdAt)}</span>
+								</div>
+								<div class="item-actions">
+									<button
+										class="icon-btn sm"
+										onclick={(e) => copyShare(e, share.url)}
+										title="Copy link"
+										aria-label="Copy link"
+									>
+										<IconCopy size={13} />
+									</button>
+									<button
+										class="icon-btn sm"
+										onclick={(e) => openShare(e, share.url)}
+										title="Open in new tab"
+										aria-label="Open in new tab"
+									>
+										<IconExternalLink size={13} />
+									</button>
+									<button
+										class="icon-btn sm danger"
+										onclick={(e) => forgetShare(e, share.shareId)}
+										title="Forget locally"
+										aria-label="Forget locally"
+									>
+										<IconTrash size={13} />
+									</button>
+								</div>
+							</div>
+						{/each}
+					{/if}
+				</div>
+			{/if}
+		</section>
+	</div>
 </aside>
 
 <style>
 	.sidebar {
-		width: 240px;
+		--sidebar-width: 248px;
+		position: relative;
+		flex-shrink: 0;
+		width: 0;
 		height: 100%;
-		background: var(--color-surface);
-		border-right: 1px solid var(--color-border);
-		display: flex;
-		flex-direction: column;
-		transition:
-			width var(--transition),
-			opacity var(--transition);
 		overflow: hidden;
+		transition: width var(--dur-slow) var(--ease-drawer);
 	}
 
-	.sidebar:not(.open) {
-		width: 0;
-		border-right: none;
+	.sidebar.open {
+		width: var(--sidebar-width);
+	}
+
+	.panel {
+		display: flex;
+		flex-direction: column;
+		width: var(--sidebar-width);
+		height: 100%;
+		background: var(--color-surface);
+		box-shadow: inset -1px 0 0 var(--color-border);
+		transform: translateX(-24px);
+		opacity: 0;
+		transition:
+			transform var(--dur-slow) var(--ease-drawer),
+			opacity var(--dur) ease;
+	}
+
+	.sidebar.open .panel {
+		transform: none;
+		opacity: 1;
+	}
+
+	.sidebar.overlay {
+		--sidebar-width: min(300px, 85vw);
+		position: fixed;
+		inset: 0 auto 0 0;
+		z-index: 50;
+		width: var(--sidebar-width);
+		overflow: visible;
+		pointer-events: none;
+	}
+
+	.sidebar.overlay .panel {
+		transform: translateX(-100%);
+		opacity: 1;
+		box-shadow: var(--shadow-pop);
+	}
+
+	.sidebar.overlay.open .panel {
+		transform: none;
+		pointer-events: auto;
+	}
+
+	.scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 49;
+		background: var(--scrim);
+		cursor: default;
+		animation: fade-in var(--dur) ease both;
+	}
+
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+		}
 	}
 
 	.sidebar-header {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		gap: 6px;
+		flex-shrink: 0;
 		height: 48px;
-		padding: 0 calc(var(--space-unit) * 2);
-		border-bottom: 1px solid var(--color-border);
+		padding: 0 10px 0 calc(var(--space-unit) * 1.5);
+		box-shadow: 0 1px 0 var(--color-border);
 	}
 
 	.sidebar-header h2 {
-		font-size: 13px;
+		flex: 1;
+	}
+
+	h2 {
+		font-size: 12px;
 		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
+		letter-spacing: 0.02em;
 		color: var(--color-text-muted);
-	}
-
-	.new-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		border-radius: var(--radius-sm);
-		color: var(--color-text-muted);
-		transition: all var(--transition);
-	}
-
-	.new-btn:hover {
-		background: var(--color-bg);
-		color: var(--color-text);
 	}
 
 	.project-list {
 		flex: 1;
-		overflow-y: auto;
-		padding: calc(var(--space-unit) * 1);
+		min-height: 0;
+		padding: 6px;
 	}
 
 	.empty {
@@ -218,111 +297,124 @@
 		font-size: 13px;
 		color: var(--color-text-muted);
 		text-align: center;
-		white-space: nowrap;
+		text-wrap: pretty;
 	}
 
-	.project-item {
+	.item {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 4px;
 		width: 100%;
-		padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.5);
+		padding: 7px 6px 7px 10px;
 		border-radius: var(--radius-sm);
-		text-align: left;
 		cursor: pointer;
-		transition: background var(--transition);
+		transition: background-color var(--dur-fast) ease;
 	}
 
-	.project-item:hover {
-		background: var(--color-bg);
+	.item + .item {
+		margin-top: 1px;
 	}
 
 	.project-item.active {
-		background: var(--color-bg);
+		background: var(--color-hover);
 	}
 
-	.project-info {
+	.item-info {
 		display: flex;
 		flex-direction: column;
+		flex: 1;
 		min-width: 0;
 	}
 
-	.project-name {
+	.item-name {
 		font-size: 14px;
 		font-weight: 500;
+		line-height: 1.35;
 		color: var(--color-text);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	.project-date {
+	.share-item .item-name {
+		font-size: 13px;
+	}
+
+	.item-date {
 		font-size: 12px;
+		line-height: 1.35;
 		color: var(--color-text-muted);
+		font-variant-numeric: tabular-nums;
 	}
 
-	.delete-btn {
+	.item-actions {
 		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 24px;
-		height: 24px;
-		border-radius: var(--radius-sm);
-		color: var(--color-text-muted);
-		opacity: 0;
-		transition: all var(--transition);
-	}
-
-	.project-item:hover .delete-btn {
-		opacity: 1;
-	}
-
-	.delete-btn:hover {
-		background: var(--color-danger-bg);
-		color: var(--color-danger-fg);
-	}
-
-	/* Shares section */
-	.shares {
-		border-top: 1px solid var(--color-border);
+		gap: 2px;
 		flex-shrink: 0;
+	}
+
+	@media (hover: hover) {
+		.item:hover {
+			background: var(--color-hover);
+		}
+
+		.item-actions {
+			opacity: 0;
+			transition: opacity var(--dur-fast) ease;
+		}
+
+		.item:hover .item-actions,
+		.item:focus-within .item-actions {
+			opacity: 1;
+		}
+	}
+
+	.item :global(.icon-btn.sm:hover) {
+		background: var(--color-surface);
+	}
+
+	.shares {
+		display: flex;
+		flex-direction: column;
+		flex-shrink: 0;
+		max-height: 40%;
+		box-shadow: 0 -1px 0 var(--color-border);
 	}
 
 	.shares-header {
 		display: flex;
 		align-items: center;
-		gap: calc(var(--space-unit) * 0.75);
+		gap: 6px;
 		width: 100%;
 		height: 40px;
+		flex-shrink: 0;
 		padding: 0 calc(var(--space-unit) * 2);
 		color: var(--color-text-muted);
 		text-align: left;
-		transition: color var(--transition);
-		flex-shrink: 0;
+		transition: color var(--dur-fast) ease;
 	}
 
-	.shares-header:hover {
-		color: var(--color-text);
+	@media (hover: hover) {
+		.shares-header:hover,
+		.shares-header:hover h2 {
+			color: var(--color-text);
+		}
 	}
 
 	.shares-header h2 {
-		font-size: 13px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
 		flex: 1;
+		transition: color var(--dur-fast) ease;
 	}
 
 	.chevron {
 		display: inline-flex;
-		align-items: center;
-		justify-content: center;
 		transform: rotate(-90deg);
-		transition: transform var(--transition);
+		transition: transform var(--dur) var(--ease-out);
 	}
 
 	.chevron.open {
-		transform: rotate(0deg);
+		transform: none;
 	}
 
 	.shares-count {
@@ -334,86 +426,15 @@
 		padding: 0 6px;
 		font-size: 11px;
 		font-weight: 500;
+		font-variant-numeric: tabular-nums;
 		color: var(--color-text-muted);
 		background: var(--color-bg);
+		box-shadow: var(--shadow-border);
 		border-radius: 999px;
 	}
 
 	.shares-list {
-		max-height: 22vh;
-		overflow-y: auto;
-		padding: 0 calc(var(--space-unit) * 1) calc(var(--space-unit) * 1);
-	}
-
-	.share-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: calc(var(--space-unit) * 0.5);
-		width: 100%;
-		padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.5);
-		border-radius: var(--radius-sm);
-		text-align: left;
-		cursor: pointer;
-		transition: background var(--transition);
-	}
-
-	.share-item:hover {
-		background: var(--color-bg);
-	}
-
-	.share-info {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-		flex: 1;
-	}
-
-	.share-name {
-		font-size: 13px;
-		font-weight: 500;
-		color: var(--color-text);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.share-date {
-		font-size: 11px;
-		color: var(--color-text-muted);
-	}
-
-	.share-actions {
-		display: flex;
-		gap: 2px;
-		opacity: 0;
-		transition: opacity var(--transition);
-		flex-shrink: 0;
-	}
-
-	.share-item:hover .share-actions,
-	.share-item:focus-within .share-actions {
-		opacity: 1;
-	}
-
-	.share-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 22px;
-		height: 22px;
-		border-radius: var(--radius-sm);
-		color: var(--color-text-muted);
-		transition: all var(--transition);
-	}
-
-	.share-btn:hover {
-		background: var(--color-surface);
-		color: var(--color-text);
-	}
-
-	.share-btn.danger:hover {
-		background: var(--color-danger-bg);
-		color: var(--color-danger-fg);
+		min-height: 0;
+		padding: 0 6px 6px;
 	}
 </style>

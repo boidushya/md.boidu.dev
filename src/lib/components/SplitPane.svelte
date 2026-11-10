@@ -16,14 +16,14 @@
 	let scrollSource = $state<'editor' | 'preview' | null>(null);
 
 	function handleEditorScroll(ratio: number) {
-		if (editorState.viewMode !== 'split' || scrollSource === 'preview') return;
+		if (editorState.effectiveViewMode !== 'split' || scrollSource === 'preview') return;
 		scrollSource = 'editor';
 		previewScrollRatio = ratio;
 		setTimeout(() => (scrollSource = null), 100);
 	}
 
 	function handlePreviewScroll(ratio: number) {
-		if (editorState.viewMode !== 'split' || scrollSource === 'editor') return;
+		if (editorState.effectiveViewMode !== 'split' || scrollSource === 'editor') return;
 		scrollSource = 'preview';
 		editorScrollRatio = ratio;
 		setTimeout(() => (scrollSource = null), 100);
@@ -36,13 +36,14 @@
 		}
 	});
 
-	function handleMouseDown(e: MouseEvent) {
-		if (editorState.viewMode !== 'split') return;
+	function handlePointerDown(e: PointerEvent) {
+		if (editorState.effectiveViewMode !== 'split') return;
 		e.preventDefault();
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		isDragging = true;
 	}
 
-	function handleMouseMove(e: MouseEvent) {
+	function handlePointerMove(e: PointerEvent) {
 		if (!isDragging || !container) return;
 		const rect = container.getBoundingClientRect();
 		const x = e.clientX - rect.left;
@@ -50,7 +51,7 @@
 		splitRatio = newRatio;
 	}
 
-	function handleMouseUp() {
+	function handlePointerUp() {
 		if (isDragging) {
 			localStorage.setItem(STORAGE_KEY, splitRatio.toString());
 		}
@@ -58,7 +59,7 @@
 	}
 
 	function handleDividerKeydown(e: KeyboardEvent) {
-		if (editorState.viewMode !== 'split') return;
+		if (editorState.effectiveViewMode !== 'split') return;
 		const step = e.shiftKey ? 0.1 : 0.02;
 		if (e.key === 'ArrowLeft') {
 			e.preventDefault();
@@ -72,24 +73,22 @@
 	}
 
 	const editorWidth = $derived(
-		editorState.viewMode === 'preview' ? '0' :
-		editorState.viewMode === 'editor' ? '100%' :
+		editorState.effectiveViewMode === 'preview' ? '0' :
+		editorState.effectiveViewMode === 'editor' ? '100%' :
 		`calc(${splitRatio * 100}% - 0.5px)`
 	);
 
 	const previewWidth = $derived(
-		editorState.viewMode === 'editor' ? '0' :
-		editorState.viewMode === 'preview' ? '100%' :
+		editorState.effectiveViewMode === 'editor' ? '0' :
+		editorState.effectiveViewMode === 'preview' ? '100%' :
 		`calc(${(1 - splitRatio) * 100}% - 0.5px)`
 	);
 </script>
 
-<svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
-
 <div class="split-pane" class:dragging={isDragging} bind:this={container}>
 	<div
 		class="pane editor-pane"
-		class:hidden={editorState.viewMode === 'preview'}
+		class:hidden={editorState.effectiveViewMode === 'preview'}
 		style:width={editorWidth}
 	>
 		<Editor onScroll={handleEditorScroll} scrollRatio={editorScrollRatio} />
@@ -98,8 +97,11 @@
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="divider"
-		class:hidden={editorState.viewMode !== 'split'}
-		onmousedown={handleMouseDown}
+		class:hidden={editorState.effectiveViewMode !== 'split'}
+		onpointerdown={handlePointerDown}
+		onpointermove={handlePointerMove}
+		onpointerup={handlePointerUp}
+		onpointercancel={handlePointerUp}
 		onkeydown={handleDividerKeydown}
 		role="separator"
 		aria-label="Resize panes"
@@ -107,11 +109,11 @@
 		aria-valuenow={Math.round(splitRatio * 100)}
 		aria-valuemin={20}
 		aria-valuemax={80}
-		tabindex={editorState.viewMode === 'split' ? 0 : -1}
+		tabindex={editorState.effectiveViewMode === 'split' ? 0 : -1}
 	></div>
 	<div
 		class="pane preview-pane"
-		class:hidden={editorState.viewMode === 'editor'}
+		class:hidden={editorState.effectiveViewMode === 'editor'}
 		style:width={previewWidth}
 	>
 		<Preview onScroll={handlePreviewScroll} scrollRatio={previewScrollRatio} />
@@ -126,6 +128,7 @@
 
 	.split-pane.dragging {
 		user-select: none;
+		cursor: col-resize;
 	}
 
 	.pane {
@@ -144,8 +147,11 @@
 		background: var(--color-border);
 		cursor: col-resize;
 		position: relative;
+		z-index: 1;
 		padding: 0;
 		border: none;
+		touch-action: none;
+		transition: background-color var(--dur-fast) ease;
 	}
 
 	.divider:focus-visible {
@@ -165,9 +171,14 @@
 		right: -4px;
 	}
 
-	.divider:hover,
 	.split-pane.dragging .divider {
 		background: var(--color-accent);
+	}
+
+	@media (hover: hover) {
+		.divider:hover {
+			background: var(--color-accent);
+		}
 	}
 
 	.divider.hidden {

@@ -8,20 +8,26 @@
 	import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands';
 	import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 	import { tags as t } from '@lezer/highlight';
+	import { scroll } from '$lib/actions/scroll';
 
 	const mdHighlight = HighlightStyle.define([
-		{ tag: t.heading, color: 'var(--cm-heading)', fontWeight: '600' },
+		{ tag: t.heading, color: 'var(--color-text)', fontWeight: '600' },
 		{ tag: t.strong, fontWeight: '700' },
 		{ tag: t.emphasis, fontStyle: 'italic' },
 		{ tag: t.strikethrough, textDecoration: 'line-through' },
-		{ tag: t.link, color: 'var(--cm-link)' },
-		{ tag: t.url, color: 'var(--cm-link)', textDecoration: 'underline' },
-		{ tag: t.monospace, color: 'var(--cm-code)' },
+		{ tag: t.link, color: 'var(--color-accent)' },
+		{ tag: t.url, color: 'var(--hl-muted)', textDecoration: 'underline' },
+		{ tag: t.monospace, color: 'var(--hl-string)' },
 		{ tag: t.quote, color: 'var(--color-text-muted)', fontStyle: 'italic' },
-		{ tag: t.meta, color: 'var(--cm-meta)' },
-		{ tag: t.processingInstruction, color: 'var(--cm-separator)' },
-		{ tag: t.contentSeparator, color: 'var(--cm-separator)' },
-		{ tag: t.list, color: 'var(--cm-list)' }
+		{ tag: t.meta, color: 'var(--hl-muted)' },
+		{ tag: t.processingInstruction, color: 'var(--hl-muted)' },
+		{ tag: t.contentSeparator, color: 'var(--hl-muted)' },
+		{ tag: t.list, color: 'var(--hl-keyword)' },
+		{ tag: [t.keyword, t.number, t.bool, t.null, t.typeName, t.tagName], color: 'var(--hl-keyword)' },
+		{ tag: [t.string, t.regexp, t.special(t.string)], color: 'var(--hl-string)' },
+		{ tag: t.comment, color: 'var(--hl-comment)', fontStyle: 'italic' },
+		{ tag: t.function(t.variableName), fontWeight: '500' },
+		{ tag: [t.punctuation, t.operator], color: 'var(--hl-muted)' }
 	]);
 
 	interface Props {
@@ -34,6 +40,7 @@
 	let editorContainer: HTMLDivElement;
 	let view: EditorView;
 	let isScrolling = false;
+	let scrollbars: { destroy: () => void } | undefined;
 
 	const theme = EditorView.theme({
 		'&': {
@@ -43,16 +50,17 @@
 		'.cm-scroller': {
 			fontFamily: 'var(--font-mono)',
 			lineHeight: '1.7',
-			padding: 'calc(var(--space-unit) * 3)'
+			overscrollBehavior: 'contain'
 		},
 		'.cm-content': {
-			caretColor: 'var(--color-text)'
+			caretColor: 'var(--color-text)',
+			padding: 'calc(var(--space-unit) * 3) calc(var(--space-unit) * 3) calc(var(--space-unit) * 8)'
 		},
 		'.cm-cursor': {
 			borderLeftColor: 'var(--color-text)'
 		},
 		'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-			backgroundColor: 'rgba(59, 130, 246, 0.2)'
+			backgroundColor: 'var(--color-selection)'
 		},
 		'.cm-activeLine': {
 			backgroundColor: 'transparent'
@@ -66,7 +74,7 @@
 		return [
 			history(),
 			theme,
-			placeholder('Start writing markdown...'),
+			placeholder('Start writing…'),
 			markdown({ codeLanguages: languages }),
 			syntaxHighlighting(mdHighlight),
 			keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
@@ -86,9 +94,11 @@
 		});
 
 		view.scrollDOM.addEventListener('scroll', handleScroll);
+		scrollbars = scroll(view.dom, view.scrollDOM);
 	});
 
 	onDestroy(() => {
+		scrollbars?.destroy();
 		view?.scrollDOM.removeEventListener('scroll', handleScroll);
 		view?.destroy();
 	});
@@ -139,5 +149,11 @@
 
 	.editor :global(.cm-focused) {
 		outline: none;
+	}
+
+	@media (max-width: 720px) {
+		.editor :global(.cm-editor .cm-content) {
+			padding-inline: calc(var(--space-unit) * 2);
+		}
 	}
 </style>

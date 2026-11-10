@@ -11,13 +11,20 @@ import {
 	type ShareRecord
 } from '$lib/db/projects';
 import { createShare, hashPayload, ShareTooLarge } from '$lib/share/service';
+import { copyFailed, copyText } from '$lib/share/clipboard';
+import { isTouch } from '$lib/utils/platform';
 import { toast } from 'svelte-sonner';
 
 export type ViewMode = 'split' | 'editor' | 'preview';
 export type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
+const NARROW_QUERY = '(max-width: 720px)';
+
+function byRecent(projects: Project[]): Project[] {
+	return [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
 function extractTitle(content: string): string {
-	// Match the first heading (h1-h6)
 	const match = content.match(/^#{1,6}\s+(.+)$/m);
 	if (match) {
 		return match[1].trim();
@@ -35,10 +42,21 @@ class EditorState {
 	shares = $state<ShareRecord[]>([]);
 	sharesOpen = $state(true);
 	sharing = $state(false);
+	isNarrow = $state(false);
+	effectiveViewMode = $derived<ViewMode>(
+		this.isNarrow && this.viewMode === 'split' ? 'editor' : this.viewMode
+	);
 
 	private saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	async init() {
+		const narrow = matchMedia(NARROW_QUERY);
+		this.isNarrow = narrow.matches;
+		narrow.addEventListener('change', (e) => {
+			this.isNarrow = e.matches;
+			if (e.matches) this.sidebarOpen = false;
+		});
+
 		const [projects, shares] = await Promise.all([getAllProjects(), getAllShares()]);
 		this.projects = projects;
 		this.shares = shares;
@@ -60,48 +78,73 @@ class EditorState {
 		this.sharesOpen = !this.sharesOpen;
 	}
 
-	async share(): Promise<void> {
-		if (this.sharing) return;
-		if (!this.content.trim()) return;
+	share(): Promise<void> {
+		if (this.sharing || !this.content.trim()) return Promise.resolve();
 		this.sharing = true;
-		try {
-			await this.flushSave();
-			const title = this.currentProject?.name ?? 'Untitled';
-			const contentHash = await hashPayload(this.content, title);
+		const link = this.resolveShareLink();
+		const copied = copyText(link.then((l) => l.url));
+		return this.reportShare(link, copied);
+	}
 
-			const existing = this.shares.find((s) => s.contentHash === contentHash);
-			if (existing) {
-				await navigator.clipboard.writeText(existing.url);
-				toast('Reused existing share link', {
-					description: 'This exact content was already shared'
-				});
-				return;
-			}
+	private async resolveShareLink(): Promise<{ url: string; title: string; reused: boolean }> {
+		await this.flushSave();
+		const title = this.currentProject?.name ?? 'Untitled';
+		const contentHash = await hashPayload(this.content, title);
 
-			const payload = { content: this.content, title, createdAt: Date.now() };
-			const { id, keyB64, url } = await createShare(payload);
-			const record: ShareRecord = {
-				shareId: id,
-				projectId: this.currentProject?.id ?? null,
-				title: payload.title,
-				createdAt: payload.createdAt,
-				keyB64,
-				url,
-				contentHash
-			};
-			await saveShare(record);
-			this.addShare(record);
-			await navigator.clipboard.writeText(url);
-			toast.success('Share link copied to clipboard');
-		} catch (err) {
+		const existing = this.shares.find((s) => s.contentHash === contentHash);
+		if (existing) return { url: existing.url, title, reused: true };
+
+		const payload = { content: this.content, title, createdAt: Date.now() };
+		const { id, keyB64, url } = await createShare(payload);
+		const record: ShareRecord = {
+			shareId: id,
+			projectId: this.currentProject?.id ?? null,
+			title: payload.title,
+			createdAt: payload.createdAt,
+			keyB64,
+			url,
+			contentHash
+		};
+		await saveShare(record);
+		this.addShare(record);
+		return { url, title, reused: false };
+	}
+
+	private async reportShare(
+		link: Promise<{ url: string; title: string; reused: boolean }>,
+		copied: Promise<void>
+	): Promise<void> {
+		const [linkResult, copyResult] = await Promise.allSettled([link, copied]);
+		this.sharing = false;
+
+		if (linkResult.status === 'rejected') {
+			const err = linkResult.reason;
 			if (err instanceof ShareTooLarge) {
 				toast.error('Document is too large to share (10 MB max)');
 			} else {
-				toast.error('Sharing failed — see console');
+				toast.error('Sharing failed, see console');
 				console.error(err);
 			}
-		} finally {
-			this.sharing = false;
+			return;
+		}
+
+		const { url, title, reused } = linkResult.value;
+		if (copyResult.status === 'rejected') {
+			copyFailed(url, 'share link');
+			return;
+		}
+
+		const nativeShare =
+			isTouch() && 'share' in navigator
+				? { action: { label: 'Share…', onClick: () => navigator.share({ url, title }) } }
+				: {};
+		if (reused) {
+			toast('Share link copied', {
+				description: 'This exact content was already shared',
+				...nativeShare
+			});
+		} else {
+			toast.success('Share link copied', nativeShare);
 		}
 	}
 
@@ -122,7 +165,9 @@ class EditorState {
 		this.saveStatus = 'saved';
 	}
 
-	async removeProject(id: string) {
+	async removeProject(id: string): Promise<Project | undefined> {
+		if (this.currentProject?.id === id) await this.flushSave();
+		const removed = await getProject(id);
 		await deleteProject(id);
 		this.projects = this.projects.filter((p) => p.id !== id);
 		if (this.currentProject?.id === id) {
@@ -133,6 +178,15 @@ class EditorState {
 				this.content = '';
 			}
 		}
+		return removed;
+	}
+
+	async restoreProject(project: Project) {
+		await this.flushSave();
+		const restored = { ...project, updatedAt: Date.now() };
+		await saveProject(restored);
+		this.projects = byRecent([restored, ...this.projects]);
+		await this.loadProject(restored.id);
 	}
 
 	updateContent(newContent: string) {
@@ -190,8 +244,7 @@ class EditorState {
 		await saveProject(updated);
 		this.currentProject = updated;
 
-		// Update in projects list
-		this.projects = this.projects.map((p) => (p.id === updated.id ? updated : p));
+		this.projects = byRecent(this.projects.map((p) => (p.id === updated.id ? updated : p)));
 		this.saveStatus = 'saved';
 	}
 
@@ -203,7 +256,15 @@ class EditorState {
 		this.sidebarOpen = !this.sidebarOpen;
 	}
 
-	async forkFromShare(title: string, content: string): Promise<void> {
+	async importFile(file: File): Promise<void> {
+		const content = await file.text();
+		const fromHeading = extractTitle(content);
+		const name = fromHeading !== 'Untitled' ? fromHeading : file.name.replace(/\.(md|markdown|txt)$/i, '');
+		await this.flushSave();
+		await this.createFromContent(name, content);
+	}
+
+	async createFromContent(title: string, content: string): Promise<void> {
 		const project = await createProject(title);
 		const updated: Project = { ...project, content, updatedAt: Date.now() };
 		await saveProject(updated);

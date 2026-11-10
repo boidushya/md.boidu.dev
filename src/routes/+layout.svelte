@@ -17,4 +17,4 @@
 </svelte:head>
 
 {@render children()}
-<Toaster position="bottom-right" />
+<Toaster position="bottom-right" theme={theme.resolved} />

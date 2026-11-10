@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { editorState } from '$lib/stores/editor.svelte';
 	import { parseMarkdown } from '$lib/utils/markdown';
+	import { scroll } from '$lib/actions/scroll';
+	import { onMount } from 'svelte';
 
 	interface Props {
 		onScroll?: (scrollRatio: number) => void;
@@ -10,6 +12,7 @@
 
 	let { onScroll, scrollRatio, content }: Props = $props();
 
+	let hostEl: HTMLDivElement;
 	let previewEl: HTMLDivElement;
 	let isScrolling = false;
 
@@ -25,6 +28,8 @@
 		}
 	}
 
+	onMount(() => scroll(hostEl, previewEl).destroy);
+
 	$effect(() => {
 		if (previewEl && scrollRatio !== undefined) {
 			const { scrollHeight, clientHeight } = previewEl;
@@ -38,23 +43,30 @@
 	});
 </script>
 
-<div class="preview" bind:this={previewEl} onscroll={handleScroll}>
-	<article class="prose">
-		{@html html}
-	</article>
+<div class="preview-host" bind:this={hostEl}>
+	<div class="preview" bind:this={previewEl} onscroll={handleScroll}>
+		<article class="prose">
+			{@html html}
+		</article>
+	</div>
 </div>
 
 <style>
+	.preview-host {
+		height: 100%;
+		background: var(--color-editor);
+	}
+
 	.preview {
 		height: 100%;
 		overflow-y: auto;
-		background: var(--color-editor);
 	}
 
 	.prose {
 		max-width: 72ch;
 		margin: 0 auto;
-		padding: calc(var(--space-unit) * 3);
+		padding: calc(var(--space-unit) * 4) calc(var(--space-unit) * 3) calc(var(--space-unit) * 8);
+		text-wrap: pretty;
 		font-family: var(--font-sans);
 		font-size: 15px;
 		line-height: 1.7;
@@ -100,11 +112,16 @@
 
 	.prose :global(a) {
 		color: var(--color-accent);
-		text-decoration: none;
+		text-decoration: underline;
+		text-decoration-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+		text-underline-offset: 0.2em;
+		transition: text-decoration-color var(--dur-fast) ease;
 	}
 
-	.prose :global(a:hover) {
-		text-decoration: underline;
+	@media (hover: hover) {
+		.prose :global(a:hover) {
+			text-decoration-color: currentColor;
+		}
 	}
 
 	.prose :global(strong) {
@@ -137,12 +154,9 @@
 	}
 
 	/* Task lists */
-	.prose :global(ul.contains-task-list) {
+	.prose :global(li:has(> input[type='checkbox'])) {
 		list-style: none;
-		padding-left: 0;
-	}
-
-	.prose :global(li.task-list-item) {
+		margin-left: -1.5em;
 		display: flex;
 		align-items: flex-start;
 		gap: 0.5em;
@@ -157,9 +171,8 @@
 	.prose :global(blockquote) {
 		margin: 1em 0;
 		padding: 0.5em 1em;
-		border-left: 3px solid var(--color-border);
+		border-left: 2px solid var(--color-border);
 		color: var(--color-text-muted);
-		font-style: italic;
 	}
 
 	.prose :global(blockquote p) {
@@ -171,21 +184,23 @@
 		font-family: var(--font-mono);
 		font-size: 0.9em;
 		background: var(--color-bg);
-		padding: 0.15em 0.4em;
-		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-border);
+		padding: 0.1em 0.35em;
+		border-radius: 5px;
 	}
 
 	.prose :global(pre) {
 		margin: 1em 0;
-		padding: 1em;
+		padding: 1em 1.15em;
 		background: var(--color-bg);
-		border: 1px solid var(--color-border);
+		box-shadow: var(--shadow-border);
 		border-radius: var(--radius);
 		overflow-x: auto;
 	}
 
 	.prose :global(pre code) {
 		background: none;
+		box-shadow: none;
 		padding: 0;
 		font-size: 13px;
 		color: var(--color-text);
@@ -197,13 +212,17 @@
 		margin: 1em 0;
 		border-collapse: collapse;
 		font-size: 0.95em;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.prose :global(th),
 	.prose :global(td) {
 		padding: 0.6em 1em;
-		text-align: left;
 		border: 1px solid var(--color-border);
+	}
+
+	.prose :global(th:not([align])) {
+		text-align: start;
 	}
 
 	.prose :global(th) {
@@ -227,63 +246,58 @@
 		max-width: 100%;
 		height: auto;
 		border-radius: var(--radius);
+		outline: 1px solid oklch(0 0 0 / 0.1);
+		outline-offset: -1px;
 	}
 
-	/* Syntax highlighting (Light theme) */
-	.prose :global(.hljs-keyword) {
-		color: #d73a49;
+	:global([data-theme='dark']) .prose :global(img) {
+		outline-color: oklch(1 0 0 / 0.1);
 	}
-	.prose :global(.hljs-string) {
-		color: #032f62;
-	}
-	.prose :global(.hljs-number) {
-		color: #005cc5;
-	}
-	.prose :global(.hljs-comment) {
-		color: #6a737d;
-	}
-	.prose :global(.hljs-function),
-	.prose :global(.hljs-title) {
-		color: #6f42c1;
-	}
-	.prose :global(.hljs-class) {
-		color: #22863a;
-	}
-	.prose :global(.hljs-variable) {
-		color: #e36209;
-	}
-	.prose :global(.hljs-operator),
-	.prose :global(.hljs-punctuation) {
-		color: var(--color-text);
-	}
-	.prose :global(.hljs-property),
-	.prose :global(.hljs-attr) {
-		color: #005cc5;
-	}
+
+	.prose :global(.hljs-keyword),
+	.prose :global(.hljs-selector-tag),
+	.prose :global(.hljs-literal),
+	.prose :global(.hljs-built_in),
+	.prose :global(.hljs-number),
+	.prose :global(.hljs-symbol),
 	.prose :global(.hljs-tag),
-	.prose :global(.hljs-name) {
-		color: #22863a;
+	.prose :global(.hljs-name),
+	.prose :global(.hljs-section),
+	.prose :global(.hljs-type) {
+		color: var(--hl-keyword);
 	}
-	.prose :global(.hljs-attribute) {
-		color: #6f42c1;
+	.prose :global(.hljs-string),
+	.prose :global(.hljs-regexp),
+	.prose :global(.hljs-addition) {
+		color: var(--hl-string);
 	}
-	.prose :global(.hljs-built_in) {
-		color: #005cc5;
+	.prose :global(.hljs-comment),
+	.prose :global(.hljs-quote) {
+		color: var(--hl-comment);
+		font-style: italic;
 	}
-	.prose :global(.hljs-literal) {
-		color: #005cc5;
+	.prose :global(.hljs-title),
+	.prose :global(.hljs-title.function_) {
+		font-weight: 500;
 	}
-	.prose :global(.hljs-params) {
-		color: var(--color-text);
+	.prose :global(.hljs-meta),
+	.prose :global(.hljs-punctuation),
+	.prose :global(.hljs-operator),
+	.prose :global(.hljs-deletion) {
+		color: var(--hl-muted);
 	}
-	.prose :global(.hljs-symbol) {
-		color: #005cc5;
-	}
-	.prose :global(.hljs-meta) {
-		color: #6a737d;
-	}
-	.prose :global(.hljs-section) {
-		color: #005cc5;
-		font-weight: 600;
+
+	@media print {
+		.preview-host,
+		.preview {
+			height: auto;
+			overflow: visible;
+			background: none;
+		}
+
+		.prose {
+			max-width: none;
+			padding: 0;
+		}
 	}
 </style>
