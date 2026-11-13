@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { editorState } from '$lib/stores/editor.svelte';
-	import { modKey } from '$lib/utils/platform';
+	import { keysOf, matches, shortcuts, shortcutSections, type ShortcutId } from '$lib/shortcuts';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import ProjectList from '$lib/components/ProjectList.svelte';
 	import SplitPane from '$lib/components/SplitPane.svelte';
@@ -10,20 +10,7 @@
 
 	const IMPORTABLE = /\.(md|markdown|txt)$/i;
 
-	const shortcuts: { keys: string[]; label: string }[] = [
-		{ keys: [modKey, '1'], label: 'Editor view' },
-		{ keys: [modKey, '2'], label: 'Split view' },
-		{ keys: [modKey, '3'], label: 'Preview view' },
-		{ keys: [modKey, 'B'], label: 'Toggle sidebar' },
-		{ keys: [modKey, 'N'], label: 'New project' },
-		{ keys: [modKey, 'S'], label: 'Save now' },
-		{ keys: [modKey, '⇧', 'S'], label: 'Share snapshot' },
-		{ keys: [modKey, '/'], label: 'Shortcuts' }
-	];
-
-	let showNewProjectDialog = $state(false);
 	let showHelpDialog = $state(false);
-	let newProjectName = $state('');
 	let dragDepth = $state(0);
 
 	onMount(() => {
@@ -31,44 +18,36 @@
 	});
 
 	function handleNewProject() {
-		newProjectName = '';
-		showNewProjectDialog = true;
+		if (editorState.isNarrow) editorState.sidebarOpen = false;
+		editorState.newProject();
 	}
 
-	async function createNewProject(e: SubmitEvent) {
-		e.preventDefault();
-		await editorState.newProject(newProjectName.trim() || 'Untitled');
-		showNewProjectDialog = false;
-	}
+	const actions: Partial<Record<ShortcutId, () => void>> = {
+		editorView: () => editorState.setViewMode('editor'),
+		splitView: () => editorState.setViewMode('split'),
+		previewView: () => editorState.setViewMode('preview'),
+		sidebar: () => editorState.toggleSidebar(),
+		newProject: handleNewProject,
+		prevProject: () => editorState.openAdjacentProject(-1),
+		nextProject: () => editorState.openAdjacentProject(1),
+		rename: () => {
+			if (editorState.currentProject && !editorState.isNarrow) editorState.renaming = true;
+		},
+		save: () => editorState.save(),
+		share: () => editorState.share(),
+		help: () => (showHelpDialog = !showHelpDialog)
+	};
 
 	function handleKeydown(e: KeyboardEvent) {
-		const isMod = e.metaKey || e.ctrlKey;
-
-		if (isMod && e.key === '1') {
-			e.preventDefault();
-			editorState.setViewMode('editor');
-		} else if (isMod && e.key === '2') {
-			e.preventDefault();
-			editorState.setViewMode('split');
-		} else if (isMod && e.key === '3') {
-			e.preventDefault();
-			editorState.setViewMode('preview');
-		} else if (isMod && e.shiftKey && (e.key === 'S' || e.key === 's')) {
-			e.preventDefault();
-			editorState.share();
-		} else if (isMod && e.key === 's') {
-			e.preventDefault();
-			editorState.save();
-		} else if (isMod && e.key === 'n') {
-			e.preventDefault();
-			handleNewProject();
-		} else if (isMod && e.key === 'b') {
-			e.preventDefault();
-			editorState.toggleSidebar();
-		} else if (isMod && e.key === '/') {
-			e.preventDefault();
-			showHelpDialog = !showHelpDialog;
-		} else if (e.key === 'Escape' && editorState.isNarrow && editorState.sidebarOpen) {
+		for (const [id, run] of Object.entries(actions) as [ShortcutId, () => void][]) {
+			if (matches(e, id)) {
+				e.preventDefault();
+				e.stopPropagation();
+				run();
+				return;
+			}
+		}
+		if (e.key === 'Escape' && editorState.isNarrow && editorState.sidebarOpen) {
 			editorState.sidebarOpen = false;
 		}
 	}
@@ -105,7 +84,7 @@
 </script>
 
 <svelte:window
-	onkeydown={handleKeydown}
+	onkeydowncapture={handleKeydown}
 	ondragenter={handleDragEnter}
 	ondragleave={handleDragLeave}
 	ondragover={handleDragOver}
@@ -129,39 +108,25 @@
 	</div>
 {/if}
 
-<Dialog bind:open={showNewProjectDialog} title="New project">
-	<form onsubmit={createNewProject}>
-		<!-- svelte-ignore a11y_autofocus -->
-		<input
-			type="text"
-			bind:value={newProjectName}
-			placeholder="Untitled"
-			aria-label="Project name"
-			autofocus
-		/>
-		<div class="dialog-actions">
-			<button type="button" class="btn" onclick={() => (showNewProjectDialog = false)}>Cancel</button>
-			<button type="submit" class="btn primary">Create</button>
-		</div>
-	</form>
-</Dialog>
-
-<Dialog bind:open={showHelpDialog} title="Keyboard shortcuts" width={320}>
-	<dl class="shortcuts">
-		{#each shortcuts as { keys, label } (label)}
-			<div class="shortcut">
-				<dt>{label}</dt>
-				<dd>
-					{#each keys as key (key)}<kbd>{key}</kbd>{/each}
-				</dd>
-			</div>
+<Dialog bind:open={showHelpDialog} title="Keyboard shortcuts" width={560}>
+	<div class="sections">
+		{#each shortcutSections as section (section.title)}
+			<section>
+				<h4>{section.title}</h4>
+				<dl class="shortcuts">
+					{#each section.ids as id (id)}
+						<div class="shortcut">
+							<dt>{shortcuts[id].label}</dt>
+							<dd>
+								{#each keysOf(id) as key (key)}<kbd>{key}</kbd>{/each}
+							</dd>
+						</div>
+					{/each}
+				</dl>
+			</section>
 		{/each}
-		<div class="shortcut">
-			<dt>Close dialog</dt>
-			<dd><kbd>Esc</kbd></dd>
-		</div>
-	</dl>
-	<p class="hint">Drop a .md file anywhere to open it.</p>
+	</div>
+	<p class="hint">Drop a .md file anywhere to open it. Press <kbd>Esc</kbd> to close.</p>
 </Dialog>
 
 <style>
@@ -184,29 +149,21 @@
 		overflow: hidden;
 	}
 
-	input {
-		width: 100%;
-		height: 38px;
-		padding: 0 12px;
-		border: 1px solid var(--color-border);
-		border-radius: 10px;
-		font-size: 14px;
-		background: var(--color-bg);
-		transition:
-			border-color var(--dur-fast) ease,
-			box-shadow var(--dur-fast) ease;
+	.sections {
+		columns: 2 220px;
+		column-gap: 28px;
 	}
 
-	input:focus {
-		border-color: var(--color-accent);
-		box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 20%, transparent);
+	section {
+		break-inside: avoid;
+		padding-bottom: 20px;
 	}
 
-	.dialog-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: var(--space-unit);
-		margin-top: 20px;
+	h4 {
+		margin-bottom: 10px;
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--color-text-muted);
 	}
 
 	.shortcuts {

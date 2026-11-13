@@ -1,15 +1,26 @@
 <script lang="ts">
 	import { theme } from '$lib/stores/theme.svelte';
+	import { tooltip } from '$lib/actions/tooltip';
+	import { matches } from '$lib/shortcuts';
 	import IconMoon from '@tabler/icons-svelte-runes/icons/moon';
 	import IconSun from '@tabler/icons-svelte-runes/icons/sun';
 
 	const dark = $derived(theme.resolved === 'dark');
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (!matches(e, 'theme')) return;
+		e.preventDefault();
+		e.stopPropagation();
+		theme.toggle();
+	}
 </script>
+
+<svelte:window onkeydowncapture={handleKeydown} />
 
 <button
 	class="icon-btn"
 	onclick={() => theme.toggle()}
-	title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+	use:tooltip={{ label: dark ? 'Light mode' : 'Dark mode', shortcut: 'theme' }}
 	aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
 >
 	<span class="icon" data-keep-transition class:shown={dark}><IconSun size={18} /></span>

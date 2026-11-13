@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { editorState, type ViewMode } from '$lib/stores/editor.svelte';
 	import { textStats } from '$lib/utils/stats';
-	import { modKey } from '$lib/utils/platform';
+	import { tooltip } from '$lib/actions/tooltip';
+	import type { ShortcutId } from '$lib/shortcuts';
+	import { tick, untrack } from 'svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import IconLayoutSidebar from '@tabler/icons-svelte-runes/icons/layout-sidebar';
 	import IconPlus from '@tabler/icons-svelte-runes/icons/plus';
@@ -15,15 +17,14 @@
 
 	let { onNewProject, onShowHelp }: Props = $props();
 
-	let isEditingName = $state(false);
 	let editedName = $state('');
 	let nameInput = $state<HTMLInputElement>();
 	let animatePill = $state(false);
 
-	const allViews: { mode: ViewMode; label: string }[] = [
-		{ mode: 'editor', label: 'Editor' },
-		{ mode: 'split', label: 'Split' },
-		{ mode: 'preview', label: 'Preview' }
+	const allViews: { mode: ViewMode; label: string; shortcut: ShortcutId }[] = [
+		{ mode: 'editor', label: 'Editor', shortcut: 'editorView' },
+		{ mode: 'split', label: 'Split', shortcut: 'splitView' },
+		{ mode: 'preview', label: 'Preview', shortcut: 'previewView' }
 	];
 
 	const views = $derived(
@@ -41,17 +42,20 @@
 	}
 
 	function startEditing() {
-		if (!editorState.currentProject) return;
-		editedName = editorState.currentProject.name;
-		isEditingName = true;
-		setTimeout(() => nameInput?.select(), 0);
+		if (editorState.currentProject) editorState.renaming = true;
 	}
+
+	$effect(() => {
+		if (!editorState.renaming) return;
+		editedName = untrack(() => editorState.currentProject?.name ?? '');
+		tick().then(() => nameInput?.select());
+	});
 
 	function saveNameEdit() {
 		if (editedName.trim() && editorState.currentProject) {
 			editorState.renameProject(editedName.trim());
 		}
-		isEditingName = false;
+		editorState.renaming = false;
 	}
 
 	function handleNameKeydown(e: KeyboardEvent) {
@@ -59,7 +63,7 @@
 			e.preventDefault();
 			saveNameEdit();
 		} else if (e.key === 'Escape') {
-			isEditingName = false;
+			editorState.renaming = false;
 		}
 	}
 </script>
@@ -72,7 +76,7 @@
 			class="icon-btn sidebar-toggle"
 			class:hidden={editorState.sidebarOpen && !editorState.isNarrow}
 			onclick={() => editorState.toggleSidebar()}
-			title="Toggle sidebar ({modKey}B)"
+			use:tooltip={{ label: 'Open sidebar', shortcut: 'sidebar' }}
 			aria-label="Toggle sidebar"
 			aria-expanded={editorState.sidebarOpen}
 		>
@@ -81,8 +85,8 @@
 
 		{#if editorState.currentProject}
 			<div class="project-name-container">
-				<span class="project-name-measure">{isEditingName ? editedName : editorState.currentProject.name}</span>
-				{#if isEditingName}
+				<span class="project-name-measure">{editorState.renaming ? editedName : editorState.currentProject.name}</span>
+				{#if editorState.renaming}
 					<input
 						bind:this={nameInput}
 						bind:value={editedName}
@@ -98,7 +102,7 @@
 						onkeydown={(e) => (e.key === 'Enter' || e.key === 'F2') && startEditing()}
 						role="button"
 						tabindex="0"
-						title="Double-click to rename"
+						use:tooltip={{ label: 'Double-click to rename', shortcut: 'rename' }}
 					>{editorState.currentProject.name}</span>
 				{/if}
 			</div>
@@ -115,8 +119,9 @@
 			style:--index={activeIndex}
 		>
 			<span class="pill" aria-hidden="true"></span>
-			{#each views as { mode, label } (mode)}
+			{#each views as { mode, label, shortcut } (mode)}
 				<button
+					use:tooltip={{ label: `${label} view`, shortcut }}
 					class="view-btn"
 					class:active={editorState.effectiveViewMode === mode}
 					aria-pressed={editorState.effectiveViewMode === mode}
@@ -142,19 +147,19 @@
 			class="icon-btn"
 			onclick={() => editorState.share()}
 			disabled={!editorState.content.trim() || editorState.sharing}
-			title="Share snapshot ({modKey}⇧S)"
+			use:tooltip={{ label: 'Share snapshot', shortcut: 'share' }}
 			aria-label="Share snapshot"
 		>
 			<IconShare2 size={18} />
 		</button>
 
-		<button class="icon-btn" onclick={onNewProject} title="New project ({modKey}N)" aria-label="New project">
+		<button class="icon-btn" onclick={onNewProject} use:tooltip={{ label: 'New project', shortcut: 'newProject' }} aria-label="New project">
 			<IconPlus size={18} />
 		</button>
 
 		<ThemeToggle />
 
-		<button class="icon-btn help" onclick={onShowHelp} title="Shortcuts ({modKey}/)" aria-label="Keyboard shortcuts">
+		<button class="icon-btn help" onclick={onShowHelp} use:tooltip={{ label: 'Keyboard shortcuts', shortcut: 'help' }} aria-label="Keyboard shortcuts">
 			<IconKeyboard size={18} />
 		</button>
 	</div>

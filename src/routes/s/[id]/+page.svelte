@@ -16,6 +16,7 @@
 	import IconDownload from '@tabler/icons-svelte-runes/icons/download';
 	import IconPencil from '@tabler/icons-svelte-runes/icons/pencil';
 	import { toast } from 'svelte-sonner';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	type Status = 'loading' | 'ready' | 'error';
 
@@ -114,10 +115,10 @@
 		</div>
 		<div class="viewer-actions">
 			{#if status === 'ready'}
-				<button class="btn" onclick={handleCopy} title="Copy Markdown" aria-label="Copy Markdown">
+				<button class="btn" onclick={handleCopy} use:tooltip={{ label: 'Copy Markdown' }} aria-label="Copy Markdown">
 					<IconCopy size={16} /><span class="label">Copy</span>
 				</button>
-				<button class="btn" onclick={handleDownload} title="Download .md" aria-label="Download .md">
+				<button class="btn" onclick={handleDownload} use:tooltip={{ label: 'Download .md' }} aria-label="Download .md">
 					<IconDownload size={16} /><span class="label">Download</span>
 				</button>
 			{/if}

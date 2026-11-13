@@ -258,3 +258,82 @@ a.btn:active {
     transition-property: opacity, color, background-color, box-shadow !important;
   }
 }
+
+.tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 300;
+  pointer-events: none;
+  transform-origin: var(--origin-x) top;
+  transition:
+    opacity var(--dur-fast) ease-out,
+    scale var(--dur-fast) var(--ease-out);
+}
+
+.tooltip[data-side="top"] {
+  transform-origin: var(--origin-x) bottom;
+}
+
+@starting-style {
+  .tooltip:not(.instant) {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+.tooltip-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 1px var(--color-border),
+    0 4px 8px -2px oklch(0 0 0 / 0.08),
+    0 12px 24px -8px oklch(0 0 0 / 0.14);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+
+.tooltip-keys {
+  display: flex;
+  gap: 3px;
+}
+
+.tooltip-keys kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  box-shadow:
+    inset 0 0 0 1px var(--color-border),
+    inset 0 -1px 0 var(--color-border);
+}
+
+.tooltip-arrow {
+  position: absolute;
+  top: -5px;
+  rotate: 180deg;
+  overflow: visible;
+  fill: var(--color-surface);
+  stroke: var(--color-border);
+  stroke-width: 1px;
+}
+
+.tooltip[data-side="top"] .tooltip-arrow {
+  top: auto;
+  bottom: -5px;
+  rotate: none;
+}

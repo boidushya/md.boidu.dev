@@ -9,6 +9,7 @@
 	import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 	import { tags as t } from '@lezer/highlight';
 	import { scroll } from '$lib/actions/scroll';
+	import { formatKeymap } from '$lib/editor/format';
 
 	const mdHighlight = HighlightStyle.define([
 		{ tag: t.heading, color: 'var(--color-text)', fontWeight: '600' },
@@ -77,7 +78,7 @@
 			placeholder('Start writing…'),
 			markdown({ codeLanguages: languages }),
 			syntaxHighlighting(mdHighlight),
-			keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+			keymap.of([...formatKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
 			EditorView.updateListener.of((update) => {
 				if (update.docChanged) {
 					editorState.updateContent(update.state.doc.toString());
@@ -119,6 +120,10 @@
 		if (id === lastProjectId) return;
 		lastProjectId = id;
 		view.setState(EditorState.create({ doc: editorState.content, extensions: buildExtensions() }));
+	});
+
+	$effect(() => {
+		if (editorState.focusRequest > 0) view?.focus();
 	});
 
 	// Sync scroll position from preview

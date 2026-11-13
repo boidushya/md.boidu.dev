@@ -43,6 +43,8 @@ class EditorState {
 	sharesOpen = $state(true);
 	sharing = $state(false);
 	isNarrow = $state(false);
+	renaming = $state(false);
+	focusRequest = $state(0);
 	effectiveViewMode = $derived<ViewMode>(
 		this.isNarrow && this.viewMode === 'split' ? 'editor' : this.viewMode
 	);
@@ -149,6 +151,7 @@ class EditorState {
 	}
 
 	async loadProject(id: string) {
+		await this.flushSave();
 		const project = await getProject(id);
 		if (project) {
 			this.currentProject = project;
@@ -157,12 +160,24 @@ class EditorState {
 		}
 	}
 
-	async newProject(name: string) {
-		const project = await createProject(name);
+	async newProject() {
+		if (this.currentProject && !this.content.trim()) {
+			this.focusRequest++;
+			return;
+		}
+		await this.flushSave();
+		const project = await createProject('Untitled');
 		this.projects = [project, ...this.projects];
 		this.currentProject = project;
 		this.content = '';
 		this.saveStatus = 'saved';
+		this.focusRequest++;
+	}
+
+	async openAdjacentProject(step: 1 | -1) {
+		const index = this.projects.findIndex((p) => p.id === this.currentProject?.id);
+		const target = this.projects[index + step];
+		if (target) await this.loadProject(target.id);
 	}
 
 	async removeProject(id: string): Promise<Project | undefined> {

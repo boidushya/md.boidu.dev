@@ -11,7 +11,7 @@
 	import { toast } from 'svelte-sonner';
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { modKey } from '$lib/utils/platform';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	interface Props {
 		onNewProject: () => void;
@@ -83,13 +83,13 @@
 			<button
 				class="icon-btn"
 				onclick={() => editorState.toggleSidebar()}
-				title="Close sidebar ({modKey}B)"
+				use:tooltip={{ label: 'Close sidebar', shortcut: 'sidebar' }}
 				aria-label="Close sidebar"
 			>
 				<IconLayoutSidebar size={18} />
 			</button>
 			<h2>Projects</h2>
-			<button class="icon-btn" onclick={onNewProject} title="New project" aria-label="New project">
+			<button class="icon-btn" onclick={onNewProject} use:tooltip={{ label: 'New project', shortcut: 'newProject' }} aria-label="New project">
 				<IconPlus size={18} />
 			</button>
 		</div>
@@ -116,7 +116,7 @@
 							<button
 								class="icon-btn sm danger"
 								onclick={(e) => handleDelete(e, project.id)}
-								title="Delete project"
+								use:tooltip={{ label: 'Delete project' }}
 								aria-label="Delete {project.name}"
 							>
 								<IconTrash size={14} />
@@ -154,7 +154,7 @@
 								onkeydown={(e) => e.key === 'Enter' && copyShare(e, share.url)}
 								role="button"
 								tabindex="0"
-								title="Copy link"
+								use:tooltip={{ label: 'Copy link' }}
 							>
 								<div class="item-info">
 									<span class="item-name">{share.title}</span>
@@ -164,7 +164,7 @@
 									<button
 										class="icon-btn sm"
 										onclick={(e) => copyShare(e, share.url)}
-										title="Copy link"
+										use:tooltip={{ label: 'Copy link' }}
 										aria-label="Copy link"
 									>
 										<IconCopy size={13} />
@@ -172,7 +172,7 @@
 									<button
 										class="icon-btn sm"
 										onclick={(e) => openShare(e, share.url)}
-										title="Open in new tab"
+										use:tooltip={{ label: 'Open in new tab' }}
 										aria-label="Open in new tab"
 									>
 										<IconExternalLink size={13} />
@@ -180,7 +180,7 @@
 									<button
 										class="icon-btn sm danger"
 										onclick={(e) => forgetShare(e, share.shareId)}
-										title="Forget locally"
+										use:tooltip={{ label: 'Forget locally' }}
 										aria-label="Forget locally"
 									>
 										<IconTrash size={13} />
